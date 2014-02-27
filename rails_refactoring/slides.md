@@ -16,7 +16,7 @@
  - Often not very independent (easy to just use lots of shared ivars)
 
 
-## Classes should be SOLID, not far
+## Classes should be SOLID, not fat
   - Single responsibility principle
     - A class should have only a single responsibility.
   - Open/closed principle
