@@ -1,192 +1,587 @@
-## Rails Refactoring
+## Refactoring Obese Models
 ####Joey Lorich
 
 
-##Overview
- - What is documentation?
- - YARD
- - Proposed Standards
+## Fat model - Skinny Controller
+  - Great idea in a general sense
+  - Keep most logic out of the contorller
+  - However, models quickly become unmaintainably 'fat'
 
 
-## What is software documentation?
-> "Written text that accompanies computer software. It either explains how it operates or how to use it, and may mean different things to people in different roles." - *Wikipedia (I'm lazy)*
+## Obese Models
+ - Hundreds or even thousands of lines of code
+ - Hard to navigate
+ - Too large to effectively organize
+ - Massive test files
+ - Often not very independent (easy to just use lots of shared ivars)
 
 
-## Why Document Source Code?
- - It saves money.  
-   - Good code *should* be fairly self explanatory, but it's not always.
-   - Just because you *can* figure out what something does doesn't mean that it doesn't waste time a quick comment could have saved.
-   - Wasted time means less efficient development and wasted client money
+## Classes should be SOLID, not far
+  - Single responsibility principle
+    - A class should have only a single responsibility.
+  - Open/closed principle
+    - Software entities should be open for extension, but closed for modification
+  - Liskov substitution principle
+    - Objects in a program should be replaceable with instances of their subtypes without altering the correctness of that program (See design by contract)
+  - Interface segregation principle
+    - No client should be forced to depend on methods it does not use
+  - Dependency inversion principle
+    - One should “Depend upon Abstractions. Do not depend upon concretion (See Dependency Injection)
 
 
-## Still not convinced?
- - You won't be the only developer ever on a project
- - Even if you think you might be, you probably won't. Act accordingly
- - Sometimes you can write beautiful, fancy, concise code that's difficult for thers to understand.
- - Sometimes that code is difficult for you to understand two months from now
+## Obese models are not SOLID
+  - Breaking the single responsibility principle all over
+  - Often highly dependent on other code
+  - Too many specific features to be extended
+  - Too many specific features to be substituted
 
 
-## Still not convinced?
- - It helps new developers learn about the project faster
- - It encourages organization, which speeds future development
+## Options for slimming down
+  - Concerns
+  - Service Objects
+  - Form Objects
+  - Query Objects
+  - View Objects
+  - Policy Objects
+  - Decorators
 
 
-## So what does documentation mean to Cloudspace?
-As software developers there are four categories of documentation we tend to run across with work.
+## Concerns
+ - Essentially a mixin, but with a little rails magic to make sure you can't do a few things
+ - A simple way to pull out shared code into an additional class
 
 
-## Types of Documentation
- - User Documentation
- - Design Documentation
- - Inline Documentation
- - Formal Source Documentation
+## DHH Example
+    module Taggable
+      extend ActiveSupport::Concern
 
+      included do
+        has_many :taggings, as: :taggable
+        has_many :tags, through: :taggings
 
-## User Documentation
- - Documentation specifically written for the end user.
- - Manuals, usage instructions, FAQs, etc.
- - We don't really write much of this at Cloudspace.
+        class_attribute :tag_limit
+      end
 
+      def tags_string
+        tags.map(&:name).join(', ')
+      end
 
-## Design Documentation
- - Entity-Relationship Diagrams, Workflows, etc
- - A birds-eye view of how the system goes together
+      def tags_string=(tag_string)
+        tag_names = tag_string.to_s.split(', ')
 
-<img class="fragment" src="http://i.imgur.com/1LmyxQt.jpg" style="height: 400px" />
+        tag_names.each do |tag_name|
+          tags.build(name: tag_name)
+        end
+      end
 
+      module ClassMethods
 
-## Inline Documentation
- - Probably what you think of when someone says "documentation"
- - Goes right in the source code (e.g. comments)
- - Explains what and more importantly **why** you're doing something
- - Can be used to generate the Formal Source Documentation
+        def tag_limit(value)
+          self.tag_limit_value = value
+        end
 
-
-## Formal Source Documentation
- - A separate document containing information about specific pieces of source code (e.g. [http://api.rubyonrails.org/](http://api.rubyonrails.org/))
- - Describes each class, attribute, method, etc
- - Often includes dependency lists, setup instructions, and usage examples
-
-
-## What's the most efficient way to get all this done?
- - As contracted developers, most general User and Design documentation is given to us by clients - BOOM! done
- - Database ERDs can be generated (see [Rails ERD](http://rails-erd.rubyforge.org/))
- - Formal documentation generally includes information based on source code and there are several tools to help generate it right from the code (see [Rdoc](http://rdoc.sourceforge.net/), [YARD](http://yardoc.org/))
-
-
-## YARD
-###### Yay! Another Ruby Documentation tool
-
-
-## Why Yard?
-
-- Conveniently generates formal documentation based on code comments
-- Full compatible with Rdoc syntax 
-- Easy meta-tag formatting like in Python, Java, Objective-C and other language
-- Very customizable, with gems available for rails/activerecord support
-- Auto-reloading local documentation server
-
-
-## A basic example: 
-
-    # Reverses the contents of a String or IO object.
-    #
-    # @param [String, #read] contents the contents to reverse
-    # @return [String] the contents reversed lexically
-    def reverse(contents)
-     contents = contents.read if contents.respond_to? :read
-     contents.reverse
+      end
     end
 
 
-## Proposed Standards
- - Use large organizational comments to separate sections of files
- - Document each Class, Attribute, Method, Relationship, and Scope
- - Identify each method parameter and the what it returns (including types)
- - Never introduce a commit that lowers the comment coverage percentage
- - Use [yard-activerecord](https://github.com/theodorton/yard-activerecord)
+## Uwithus Example
+    module Personable
+      extend ActiveSupport::Concern
+
+      def full_name
+        "#{first_name.to_s.capitalize} #{last_name.present? ? last_name.to_s.capitalize : family.name.to_s.capitalize}"
+      end
+
+      def member_of? (family_or_organization)
+        case family_or_organization
+          when Family
+            self.family == family_or_organization
+            
+          when Organization
+            if self.class == OrganizationUser
+              family_or_organization.organization_users.include?(self)
+            else
+              false
+            end
+          end
+      end
+
+      def transfer_to_family(family)
+        raise "No destination family provided" if family.blank?
+        
+        previous_family = self.family
+
+        self.family = family
+
+        if previous_family && previous_family.adults.blank? && previous_family.children.blank?
+          previous_family.destroy
+        end
+      end
+    end
 
 
-## What should they look like
+## Problems
+ - Often simply moving code instead of logically abstracting out
+ - Can make relationships / method implementations non-obvious
+ - Easily abusable
 
 
-## Class comments
- - Explain what the class represents from a business perspective
- - Explain any general business logic related to the class
- - Give examples of usage
- - Detail each attribute inside the class comment
+## How to use concerns
+ - Don't use them to simply move methods out
+ - Make sure it's code that can be sensibly reused
 
 
-```
-# Represents an alert for a user
-#
-# These alerts are can contain information about many different types of events and classes
-#
-# @!attribute viewed
-#   @return [Boolean] Whether or not this alert has been viewed
-#
-# @!attribute message
-#   @return [Text] A message to go along with this alert
-#
-# @!attribute created_at
-#   @return [DateTime] When this {UserAlert} was created
-#
-# @!attribute updated_at
-#   @return [DateTime] When this {UserAlert} was last updated
-class UserAlert < ActiveRecord::Base
-  ...
-end 
-```
+## Service Objects
+ - A seperate basic ruby class to help handle some kind of interaction
+ - Should be relatively isolated and reusable
+ - Can provide a good alternative to after_xxxx hooks
 
 
-## Attribute Comments
- - `yard-activerecord` shows all undocumented attributes automatically
- - Document them in the class comments anyway so all return types and explanations can be specified
+## When to user service objects
+ - Complex actions
+ - Cross-model actions
+ - Interfacing with a third party service
+ - When there are multiple ways for performing the same action (e.g. authentication)
 
 
-## Method comments
- - Explain the business logic behind the method.  This should define the expected behavior
- - Explain what the method does in a general sense
- - Explain common expected interactions with other code
+## Method that needs refactoring
+    # Add a family member POST action
+    def add_family_member
+      authorize! :update, @current_user
+
+      @user = @current_user
+      @active_profile_link = 'family'
+
+      @email = params[:email]
+      @email_confirmation = params[:email_confirmation]
+      
+      # limit to 2 adults
+      if @current_user.family.adults.length >= 2
+        flash[:error] = "There may only be 2 adults per family."
+        return render :add_family_member
+      end
+
+      # Validate email
+      return render :add_family_member unless validate_emails(@email, @email_confirmation)
+
+      # Find a new user
+      invited_user = User.find_or_initialize_by(email:@email)
+
+      # Make a shell user if no user exists
+      if invited_user.new_record?
+        invited_user.skip_confirmation!
+        invited_user.invitation_token = SecureRandom.hex(15)
+        invited_user.save(validate: false)
+
+      end
+
+      # Find or create an invitation
+      invitation = FamilyInvite.find_or_initialize_by(
+        family_id: @current_user.family.id,
+        user_id: @user.id,
+        invited_user_id: invited_user.id,
+        rejected: false,
+        accepted: false
+      )
+
+      # Only allow invites every X days
+      if !invitation.new_record?
+        flash.now[:error] = "This person already has a pending invitation to join your family."
+        return render :add_family_member
+      end
+      
+      # Create invitation record
+      # This also makes appropriate UserAlerts after_create
+      invitation.save
+
+      # Send email invitation
+      InviteMailer.send_family_invite(invited_user, @current_user, params["message"].to_s).deliver
+
+      # Flash success
+      flash.now[:notice] = "#{params[:email]} has been invited to your family."
+
+      # Clear email informaiton
+      @email = @email_confirmation = ""
+
+      return render :add_family_member
+    end
 
 
- ```
-# Creats a new Connection Request {UserAlert}
-#
-# Called when a {FamilyConnectionInvite} is created, inviting the invited_user's family to connect
-#
-# @param [Hash] args Optional arguments for this alert
-# @options args [User] :invited_user The user this alert is for
-# @options args [Integer] :referenced_user_id The user that created the {FamilyConnectionInvite}
-# @options args [User] :friend_invite_id The FamilyConnectionInvite this alert is associated with
-#
-# @return [Boolean] Whether or not the alert was created
-def self.create_connection_request_for(invited_user, args = {})
-  create(args.merge({
-    user_id: invited_user.id,
-    user_alert_category: UserAlertCategory.invitation,     user_alert_message_type: UserAlertMessageType.by_name(:connection_request)
-  }))
-end
-```
+## FamilyInvitationService
+    class FamilyInvitationService
+      attr_accessor :errors
+
+      def initialize(family)
+        @family = family
+        @errors = []
+      end
+
+      def invite_to_family(email, email_confirmation, inviting_user, message)
+        return false if maximum_number_of_adults_reached?
+        return false if valid_email?(email, email_confirmation)
+
+        invited_user = User.find_by(email: email) || create_shell_user
+
+        return false unless generate_invitation(invited_user, inviting_user)
+
+        InviteMailer.send_family_invite(
+          invited_user,
+          inviting_user,
+          message
+        ).deliver
+
+      end
+
+      def create_shell_user(email)
+        shell_user = User.new(email: email)
+        shell_user.skip_confirmation!
+        invited_user.invitation_token = SecureRandom.hex(15)
+        shell_user.save(validate: false)
+      end
+
+      def generate_invitation(invited_user, inviting_user)
+        invite = FamilyInvite.find_or_initialize_by(
+          family_id: @family
+          user_id: inviting_user.id,
+          invited_user_id: invited_user.id,
+          rejected: false,
+          accepted: false
+        )
+
+        unless invite.new_record?
+          @errors << "This person already has a pending invitation to join your family."
+          return false
+        end
+
+        invite.save
+      end
+
+      def maximum_number_of_adults_reached?
+        return false unless adults.length < 2
+
+        @errors << "There may only be 2 adults per family."
+        true
+      end
+
+      def valid_email?(email, email_confirmation)
+        return true if EmailValidationService.new(params[:email], params[:email_confirmation]).validate
+
+        @errors << "The email entered is not valid"
+      end
+    end
 
 
-## Relationship comments
+## Refactored controller
 
-Simply describe the relationship
+    def add_family_member
+      authorize! :update, @current_user
+      @active_profile_link = 'family'
 
-    # A {User} this alert my recerence, generally this is the
-    # person who initiated the event that caused the alert
-    belongs_to :referenced_user, :class_name => "User"
+      familyInvitationService = FamilyInvitationService.new(user.family)
+
+      unless familyInvitationService.invite_to_family(
+          params[:email],
+          params[:confirmation],
+          @current_user,
+          params[:message]
+        )
+
+        flash[:error] = familyInvitationService.errors.join("\n")
+        return render :add_family_member
+      end
+
+      # Flash success
+      flash.now[:notice] = "#{params[:email]} has been invited to your family."
+
+      # Clear email informaiton
+      @email = @email_confirmation = ""
+
+      return render :add_family_member
+    end
 
 
-## Scope comments
-Scopes are just class methods with a little Rails magic thrown in, document them as such
-
-    # Alerts filtered by category id
-    # @param category_id [Integer] The category ID to filter on
-    # @return [ActiveRecord::Relation<UserAlert>]
-    scope :by_category_id, lambda { |category_id| where("`user_alerts`.`user_alert_category_id` = ?", category_id) }
+## Benefits
+ - Easily testable
+ - Reusable
+ - Keeps third party services/notifications/mailers out of the models
 
 
-## Conclusion
-Write lots of comments. They make everything better for everyone.
+## Form Objects
+ - A class represending incoming data
+ - A cleaner alternative to nested attributes
+
+
+## Current Setup
+    class Activitycard < ActiveRecord::Base
+      # do not change the order of these accepts_nested_attributes_for calls
+      # if the order changes, callbacks will get screwed up
+      belongs_to :inspiration, :dependent => :destroy
+      accepts_nested_attributes_for :inspiration, :allow_destroy => false
+      
+      belongs_to :activity_permission
+      belongs_to :owner, :polymorphic => true
+      belongs_to :detail, :polymorphic => true, :dependent => :destroy
+
+      has_one :activity_detail, :inverse_of => :activity_card
+      accepts_nested_attributes_for :activity_detail, :allow_destroy => false
+
+      has_one :organization_activity_detail, :inverse_of => :activity_card
+      accepts_nested_attributes_for :organization_activity_detail, :allow_destroy => false
+      
+      has_many :commitments, :dependent => :destroy, :inverse_of => :activity_card
+      accepts_nested_attributes_for :commitments, :allow_destroy => true
+      has_many :commitment_visibilities, :through => :commitments
+
+      has_many :user_alerts, :dependent => :destroy
+
+      has_many :uvites, :dependent => :destroy
+      has_many :uvite_invitations, :dependent => :destroy
+
+      has_many :user_viewers, :through => :commitment_visibilities, :source => :owner, :source_type => "User"
+      has_many :organization_viewers, :through => :commitment_visibilities, :source => :owner, :source_type => "Organization"
+        
+      has_many :events, :dependent => :destroy
+
+      has_many :activity_card_sub_categories, :dependent => :destroy
+      accepts_nested_attributes_for :activity_card_sub_categories, :allow_destroy => true
+
+      has_many :sub_categories, through: :activity_card_sub_categories
+      accepts_nested_attributes_for :sub_categories, :allow_destroy => true
+      
+      belongs_to :category
+
+
+## Example
+    class ActivityCardCreate
+      include Virtus # Adds in some activerecord-like functionliaty (https://github.com/solnic/virtus)
+
+      extend ActiveModel::Naming
+      include ActiveModel::Conversion
+      include ActiveModel::Validations
+
+      attr_reader :user, :company, :inspiration, :commitment
+
+      attribute :name, String
+      attribute :description, String
+      attribute :image_path, String
+      attribute :commitment_status, String
+      
+      validates :name, presence: true
+      validates :description, presence: true
+
+      # Forms are never themselves persisted
+      def persisted?
+        false
+      end
+
+      def save
+        if valid?
+          persist!
+          true
+        else
+          false
+        end
+      end
+
+    private
+
+      def persist!
+        @card = ActivityCard.create!()
+        @detail = ActivityDetail.create!(name: company_name)
+        @inspiration = Inspiration.create(image_path: image_path)
+        @commitment = Commitment.create(activity_card: @card, user: current_user)
+      end
+    end
+
+
+## Query Objects
+ - Extract complex queries or reused commin queries into ruby objects
+
+
+## Example
+    class ChildCommitmentsQuery
+      def initialize(child)
+        @child = child
+      end
+
+      
+      def is_going_to?(activity)
+        commitment_exists(activity, :going)
+      end
+
+      def is_interested_in?(activity)
+        commitment_exists(activity, :interested)
+      end
+
+      def is_not_going_to?(activity)
+        commitment_exists(activity, :not_going)
+      end
+     
+      def inclusive_commitments_in_for(activity)
+        inclusive_commitments_for(activity, :going)
+
+      def inclusive_commitments_interested_for(activity)
+        inclusive_commitments_for(activity, :interested)
+      end
+
+      def inclusive_commitments_out_for(activity)
+        inclusive_commitments_for(activity, :not_going)
+      end
+
+      private
+
+      def commitment_exists?(activity, status)
+        Commitment.where(
+          activity_id: activity.id,
+          child_id: @child.id,
+          status.to_sym => true
+        ).present?
+      end
+
+      def commitments_for(activity)
+        friends.includes(:commitments).where(
+          commitments: {activity_id: activity.id}
+        )
+      end
+
+      def commitments_for(activity, status)
+        commitments_for(activtiy).where(
+          commitments: {status.to_sym => true}
+        )
+      end
+
+      def inclusive_commitments_for(activity, status)
+        commitments = commitments_for(activity, status)
+        commitments.unshift(@child) if commitment_exists?(activity, status)
+        commitments
+    end
+
+
+## View Objects (ViewModels)
+ - Objects that act as a 'contract' between controller and view
+ - Contain all data that should be needed to display a model
+ - Contain *only* data needed to display a model
+ - Somewhat like a Seralizer object from ActiveModelSerializers
+
+
+##Example
+    class ChildView
+      attr_accessor child
+
+      def initialize(child)
+        @child = child
+      end
+
+      def possessive_pronoun
+        @child.gender == "boy" ? "his" : "her"
+      end
+
+      def badge_avatar
+        if @child.avatar.respond_to?(:expiring_url)
+          (return @child.avatar.expiring_url(1.minute, :badge)) unless @child.avatar_file_name.blank?
+          "/assets/content/profile-blank-example.png"
+        else
+          (return @child.avatar.url(:badge)) unless @child.avatar_file_name.blank?
+          "/assets/content/profile-blank-example.png"
+        end
+      end
+    end
+
+
+## Policy Objects
+  - Contains read-only methods 
+  - Analytics information
+  - Comparisons
+  - Roles checking (though we should use cancan for what we can)
+
+
+## Example
+    class UserPolicy
+      def initialize(user)
+        @user = user
+      end
+
+      def is_oliver?
+        @user == User.oliver
+      end
+      
+      def is_test_drive?
+        return self.roles.include?(Role.where("name = ?", "Test Drive").first)
+      end
+
+      def is_organization?
+        @user.class == OrganizationUser
+      end
+    end
+
+
+## Decorators
+ - Work as a cleaner alternative to callbacks
+ - Classes that wrap other functionality
+ - "Decorators differ from Service Objects because they layer on responsibilities to existing interfaces. Once decorated, collaborators just treat the Decorator instance as if it were the object its decorating"
+
+
+## Example
+    class UserUpdateNotifier
+      def initialize(user)
+        @user = user
+      end
+
+      def save
+        @user.save && @user.notify_if_changed
+      end
+
+      def changed?
+        @user.changed?
+      end
+
+      private
+
+      def notify_if_changed
+        if @user.changed?
+          @user.notify
+        emd
+      end
+
+      def notify(notification: nil, key: 'kUWUserUpdated', alert: nil)
+        if !@user.devices.urban_airship.blank?
+          notification ||= {
+            device_tokens: @user.devices.urban_airship.collect {|d| d.token },
+            aps: {key: key}
+          }
+          
+          notification[:aps][:alert] = alert if alert
+          notification[:aps][:badge] = @user.badge_count
+
+          Urbanairship.push(notification)
+        end
+      end
+    end
+
+    #usage
+    UserUpdateNotifier.new(
+      user.assign_attributes(user_params)
+    ).save
+
+
+### Well-written decorators are nestable
+    UserChangedPushNotifier.new(
+      UserChangedSocketNotifier.new(
+        user.assign_attributes(user_params)
+      )
+    ).save
+
+
+## Too many classes?
+  - Probably not.
+  - Stick with good design and you'll have more flexible and more easily maintable code - meaning you will be *faster* overall
+
+
+## Still seem disorganized? Namespaces!
+  - Use namespaces!
+  - There's no need for one models folder with 50+ models.  It's confusing and slows you down.
+  - Namespaces promote organization, isolation, and make finding things easier
+
+
+## Source
+- Inspred by http://blog.codeclimate.com/blog/2012/10/17/7-ways-to-decompose-fat-activerecord-models/
