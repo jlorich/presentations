@@ -574,7 +574,7 @@
 
 ## Too many classes?
   - Probably not.
-  - Stick with good design and you'll have more flexible and more easily maintable code - meaning you will be *faster* overall
+  - Stick with good design and you'll have more flexible and more easily maintainable code - meaning you will be *faster* overall
 
 
 ## Still seem disorganized? Namespaces!
