@@ -4,107 +4,17 @@
 
 ## Fat model - Skinny Controller
   - Great idea in a general sense
-  - Keep most logic out of the contorller
-  - Commonly misundertood
-  
-## What really is the 'model'
-  - Model layer, not model file
-  - Not just ActiveRecord::Base subclasses
-  - Data representation as well as business logic
-  
+  - Keep most logic out of the controller
+  - Commonly misunderstood
+
+
 ## So what's the problem?
-  - Rails often encourages you to just put everyting in the ActiveRecord::Base model files
-  - Eventually your model fiels are unmaintainably 'fat'
-
-## Obese Model Files
- - Hundreds or even thousands of lines of code
- - Hard to navigate
- - Too large to effectively organize
- - Massive test files
- - Often not very independent (easy to just use lots of shared ivars)
-
-## Classes should be SOLID, not fat
-  - Single responsibility principle
-    - A class should have only a single responsibility.
-  - Open/closed principle
-    - Software entities should be open for extension, but closed for modification
-  - Liskov substitution principle
-    - Objects in a program should be replaceable with instances of their subtypes without altering the correctness of that program (See design by contract)
-  - Interface segregation principle
-    - No client should be forced to implement methods it does not need
-  - Dependency inversion principle
-    - One should depend upon abstractions, notconcretion (See Dependency Injection)
+  - Rails often encourages you to just put everything in the ActiveRecord::Base model files
+  - Eventually your model files are unmaintainably 'fat'
 
 
-## Obese models are not SOLID
-  - Breaking the single responsibility principle
-  - Often highly dependent on other code
-  - Too many specific features to be reasonably extended
-  - Too many specific features to be substituted
+## Fat controller method that needs refactoring
 
-
-## Options for slimming down
-  - Concerns
-  - Service Objects
-  - Form Objects
-  - Query Objects
-  - View Objects
-  - Policy Objects
-  - Decorators
-
-
-## Concerns
- - Essentially a mixin, but with a few helpers to simplify things
- - A simple way to pull out shared code into a module
-
-
-## Example
-    module Taggable
-      extend ActiveSupport::Concern
-
-      included do
-        has_many :taggings, as: :taggable
-        has_many :tags, through: :taggings
-      end
-
-      def tags_string
-        tags.map(&:name).join(', ')
-      end
-
-      def tags_string=(tag_string)
-        tag_names = tag_string.to_s.split(', ')
-
-        tag_names.each do |tag_name|
-          tags.build(name: tag_name)
-        end
-      end
-    end
-
-
-## Problems
- - Often simply moving code instead of logically abstracting out
- - Can make relationships / method implementations non-obvious
- - Easily abusable
-
-
-## How to use concerns
- - Don't use them to simply move methods out
- - Make sure it's code that can be sensibly reused
-
-
-## Service Objects
- - A seperate basic ruby class to help handle some kind of interaction
- - Should be relatively isolated and reusable
-
-
-## When to use service objects
- - Complex actions
- - Cross-model actions
- - Interfacing with a third party service
- - When there are multiple ways for performing the same action (e.g. authentication)
-
-
-## Method that needs refactoring
     # Add a family member POST action
     def add_family_member
       authorize! :update, @current_user
@@ -167,6 +77,177 @@
     end
 
 
+## How it's commonly "fixed"
+
+	class Family < ActiveRecord::Base
+	  def invite(email, inviting_user)
+	     # Find a new user
+	    invited_user = User.find_or_initialize_by(email, inviting_user)
+	
+	    # Make a shell user if no user exists
+	    if invited_user.new_record?
+	      invited_user.skip_confirmation!
+	      invited_user.invitation_token = SecureRandom.hex(15)
+	      invited_user.save(validate: false)
+	    end
+	
+	    # Find or create an invitation
+	    invitation = FamilyInvite.find_or_initialize_by(
+	      family_id: self.id,
+	      user_id: inviting_user.id,
+	      invited_user_id: invited_user.id,
+	      rejected: false,
+	      accepted: false
+	    )
+	
+	    # Only allow invites every X days
+	    if !invitation.new_record?
+	      return "This person already has a pending invitation to join your family."
+	    end
+	    
+	    # Create invitation record
+	    # This also makes appropriate UserAlerts after_create
+	    invitation.save
+	
+	    # Send email invitation
+	    InviteMailer.send_family_invite(invited_user, @current_user, params["message"].to_s).deliver
+	
+	    return true
+	  end
+	end
+
+
+## "Skinny Controller"
+
+    class FamilyController < ActionController::Base
+	  def add_family_member
+	    authorize! :update, current_user
+	
+	    @email = params[:email]
+	    @email_confirmation = params[:email_confirmation]
+	
+	    # limit to 2 adults
+	    if @current_user.family.adults.length >= 2
+	      flash[:error] = "There may only be 2 adults per family."
+	      return render :add_family_member
+	    end
+	
+	    # Validate email
+	    return render :add_family_member unless validate_emails(params[:email], params[:email_confirmation])
+	
+	    invitation_result = @current_user.family.invite(params['email'], current_user)
+	
+	    if (invitation_result == true)
+	      flash.now[:notice] = "#{params[:email]} has been invited to your family."
+	      @email = @email_confirmation = ""
+	    else
+	      flash.now[:error] = invitaton_result.
+	    else
+	
+	    return render :add_family_member
+	  end
+	end
+
+
+## Problems
+ - Clutters the family model
+ - A Family doesn't really have anything directly to do with inviting new users, creating shell users, sending out mail.
+ - The Family class is doing too much
+
+
+## What really is the 'model'
+  - Model layer, not model file
+  - Not just ActiveRecord::Base subclasses
+  - Data representation as well as business logic
+
+
+## Obese Model Files
+ - Hundreds or even thousands of lines of code
+ - Hard to navigate
+ - Too large to effectively organize
+ - Massive test files
+ - Often not very independent (easy to just use lots of shared ivars)
+
+
+## Classes should be SOLID, not fat
+  - Single responsibility principle
+    - A class should have only a single responsibility.
+  - Open/closed principle
+    - Software entities should be open for extension, but closed for modification
+  - Liskov substitution principle
+    - Objects in a program should be replaceable with instances of their subtypes without altering the correctness of that program (See design by contract)
+  - Interface segregation principle
+    - No client should be forced to implement methods it does not need
+  - Dependency inversion principle
+    - One should depend upon abstractions, not concretion (See Dependency Injection)
+
+
+## Obese models are not SOLID
+  - Breaking the single responsibility principle
+  - Often highly dependent on other code
+  - Too many specific features to be reasonably extended
+  - Too many specific features to be substituted
+
+
+## Some options for slimming down
+  - Concerns
+  - Service Objects
+  - Query Objects
+  - Policy Objects
+  - Decorators
+
+
+## Concerns
+ - Essentially a mixin, but with a few helpers to simplify things
+ - A simple way to pull out shared code into a module
+
+
+## Example
+    module Taggable
+      extend ActiveSupport::Concern
+
+      included do
+        has_many :taggings, as: :taggable
+        has_many :tags, through: :taggings
+      end
+
+      def tags_string
+        tags.map(&:name).join(', ')
+      end
+
+      def tags_string=(tag_string)
+        tag_names = tag_string.to_s.split(', ')
+
+        tag_names.each do |tag_name|
+          tags.build(name: tag_name)
+        end
+      end
+    end
+
+
+## Problems
+ - Often simply moving code instead of logically abstracting out
+ - Can make relationships / method implementations non-obvious
+ - Easily abusable
+
+
+## How to use concerns
+ - Don't use them to simply move methods out
+ - Make sure it's code that can be sensibly reused
+
+
+## Service Objects
+ - A separate ruby class to help handle some kind of interaction
+ - Should be relatively isolated and reusable
+
+
+## When to use service objects
+ - Complex actions
+ - Cross-model actions
+ - Interfacing with a third party service
+ - When there are multiple ways for performing the same action (e.g. authentication)
+
+
 ## FamilyInvitationService
     class FamilyInvitationService
       attr_accessor :errors
@@ -178,7 +259,7 @@
 
       def invite_to_family(email, email_confirmation, inviting_user, message)
         return false if maximum_number_of_adults_reached?
-        return false if valid_email?(email, email_confirmation)
+        return false if !valid_email?(email, email_confirmation)
 
         invited_user = User.find_by(email: email) || create_shell_user
 
@@ -250,10 +331,8 @@
         return render :add_family_member
       end
 
-      # Flash success
       flash.now[:notice] = "#{params[:email]} has been invited to your family."
 
-      # Clear email informaiton
       @email = @email_confirmation = ""
 
       return render :add_family_member
@@ -261,101 +340,51 @@
 
 
 ## Benefits
- - Easily testable
- - Reusable
+ - Less responsibilities per class 
+ - More easily testable
+ - More Reusable
  - Keeps third party services/notifications/mailers out of the models
 
 
-## Form Objects
- - A class represending incoming data
- - A cleaner alternative to nested attributes
-
-
-## Current Setup
-    class Activitycard < ActiveRecord::Base
-      # do not change the order of these accepts_nested_attributes_for calls
-      # if the order changes, callbacks will get screwed up
-      belongs_to :inspiration, :dependent => :destroy
-      accepts_nested_attributes_for :inspiration, :allow_destroy => false
-      
-      belongs_to :activity_permission
-      belongs_to :owner, :polymorphic => true
-      belongs_to :detail, :polymorphic => true, :dependent => :destroy
-
-      has_one :activity_detail, :inverse_of => :activity_card
-      accepts_nested_attributes_for :activity_detail, :allow_destroy => false
-
-      has_one :organization_activity_detail, :inverse_of => :activity_card
-      accepts_nested_attributes_for :organization_activity_detail, :allow_destroy => false
-      
-      has_many :commitments, :dependent => :destroy, :inverse_of => :activity_card
-      accepts_nested_attributes_for :commitments, :allow_destroy => true
-      has_many :commitment_visibilities, :through => :commitments
-
-      has_many :user_alerts, :dependent => :destroy
-
-      has_many :uvites, :dependent => :destroy
-      has_many :uvite_invitations, :dependent => :destroy
-
-      has_many :user_viewers, :through => :commitment_visibilities, :source => :owner, :source_type => "User"
-      has_many :organization_viewers, :through => :commitment_visibilities, :source => :owner, :source_type => "Organization"
-        
-      has_many :events, :dependent => :destroy
-
-      has_many :activity_card_sub_categories, :dependent => :destroy
-      accepts_nested_attributes_for :activity_card_sub_categories, :allow_destroy => true
-
-      has_many :sub_categories, through: :activity_card_sub_categories
-      accepts_nested_attributes_for :sub_categories, :allow_destroy => true
-      
-      belongs_to :category
+## Query Objects
+ - Extract complex queries or reused common queries into ruby objects
 
 
 ## Example
-    class ActivityCardCreate
-      include Virtus # Adds in some activerecord-like functionliaty (https://github.com/solnic/virtus)
-
-      extend ActiveModel::Naming
-      include ActiveModel::Conversion
-      include ActiveModel::Validations
-
-      attr_reader :user, :company, :inspiration, :commitment
-
-      attribute :name, String
-      attribute :description, String
-      attribute :image_path, String
-      attribute :commitment_status, String
-      
-      validates :name, presence: true
-      validates :description, presence: true
-
-      # Forms are never themselves persisted
-      def persisted?
-        false
+    class Child < ActiveRecord::Base
+      def inclusive_commitments_in_for(activity)
+        # own_commitment = Commitment.where("activity_id = ? AND child_id = ? AND going = ?", activity.id, id, true).first
+        commitments = friends.includes(:commitments).where("commitments.activity_id = ? AND commitments.going = ?", activity.id, true)
+        commitments.unshift(self) if is_going_to?(activity)
+        commitments
       end
 
-      def save
-        if valid?
-          persist!
-          true
-        else
-          false
-        end
+      def inclusive_commitments_interested_for(activity)
+        # own_commitment = Commitment.where("activity_id = ? AND child_id = ? AND interested = ?", activity.id, id, true).first
+        commitments = friends.includes(:commitments).where("commitments.activity_id = ? AND commitments.interested = ?", activity.id, true)
+        commitments.unshift(self) if is_interested_in?(activity)
+        commitments
       end
 
-    private
+      def inclusive_commitments_out_for(activity)
+        # own_commitment = Commitment.where("activity_id = ? AND child_id = ? AND not_going = ?", activity.id, id, true).first
+        commitments = friends.includes(:commitments).where("commitments.activity_id = ? AND commitments.not_going = ?", activity.id, true)
+        commitments.unshift(self) if is_not_going_to?(activity)
+        commitments
+      end
 
-      def persist!
-        @card = ActivityCard.create!()
-        @detail = ActivityDetail.create!(name: company_name)
-        @inspiration = Inspiration.create(image_path: image_path)
-        @commitment = Commitment.create(activity_card: @card, user: current_user)
+      def is_going_to?(activity)
+        !Commitment.where("activity_id = ? AND going = ? AND child_id = ?", activity.id, true, id).blank?
+      end
+
+      def is_interested_in?(activity)
+        !Commitment.where("activity_id = ? AND interested = ? AND child_id = ?", activity.id, true, id).blank?
+      end
+
+      def is_not_going_to?(activity)
+        !Commitment.where("activity_id = ? AND not_going = ? AND child_id = ?", activity.id, true, id).blank?
       end
     end
-
-
-## Query Objects
- - Extract complex queries or reused commin queries into ruby objects
 
 
 ## Example
@@ -363,7 +392,6 @@
       def initialize(child)
         @child = child
       end
-
       
       def is_going_to?(activity)
         commitment_exists(activity, :going)
@@ -417,40 +445,8 @@
     end
 
 
-## View Objects (ViewModels)
- - Objects that act as a 'contract' between controller and view
- - Contain all data that should be needed to display a model
- - Contain *only* data needed to display a model
- - Somewhat like a Seralizer object from ActiveModelSerializers
-
-
-##Example
-    class ChildView
-      attr_accessor child
-
-      def initialize(child)
-        @child = child
-      end
-
-      def possessive_pronoun
-        @child.gender == "boy" ? "his" : "her"
-      end
-
-      def badge_avatar
-        if @child.avatar.respond_to?(:expiring_url)
-          (return @child.avatar.expiring_url(1.minute, :badge)) unless @child.avatar_file_name.blank?
-          "/assets/content/profile-blank-example.png"
-        else
-          (return @child.avatar.url(:badge)) unless @child.avatar_file_name.blank?
-          "/assets/content/profile-blank-example.png"
-        end
-      end
-    end
-
-
 ## Policy Objects
   - Contains read-only methods 
-  - Analytics information
   - Comparisons
   - Roles checking (though we should use cancan for what we can)
 
@@ -461,12 +457,12 @@
         @user = user
       end
 
-      def is_oliver?
-        @user == User.oliver
+      def is_default?
+        @user == User.default
       end
       
       def is_test_drive?
-        return self.roles.include?(Role.where("name = ?", "Test Drive").first)
+        return self.roles.include?(Role.where(name: 'Test Drive').first)
       end
 
       def is_organization?
@@ -488,13 +484,9 @@
       end
 
       def save
-        @user.save && @user.notify_if_changed
+        @user.save && @user.notify_if_changed && @user
       end
-
-      def changed?
-        @user.changed?
-      end
-
+ 
       private
 
       def notify_if_changed
@@ -519,21 +511,12 @@
     end
 
     #usage
-    UserUpdateNotifier.new(
-      user.assign_attributes(user_params)
-    ).save
-
-
-### Well-written decorators are nestable
-    UserChangedPushNotifier.new(
-      UserChangedSocketNotifier.new(
-        user.assign_attributes(user_params)
-      )
-    ).save
+	user.assign_attributes(user_params)
+    UserUpdateNotifier.new(user).save
 
 
 ## Too many classes?
-  - Probably not.
+  - No
   - Stick with good design and you'll have more flexible and more easily maintainable code - meaning you will be *faster* overall
 
 
@@ -543,5 +526,6 @@
   - Namespaces promote organization, isolation, and make finding things easier
 
 
-## Source
-- Inspred by http://blog.codeclimate.com/blog/2012/10/17/7-ways-to-decompose-fat-activerecord-models/
+## Inspired by
+- [7 Patterns to Refactor Fat ActiveRecord Models](http://blog.codeclimate.com/blog/2012/10/17/7-ways-to-decompose-fat-activerecord-models/)
+- [Practical Object-Oriented Design in Ruby - Sandi Metz](http://www.poodr.com/)
