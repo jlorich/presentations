@@ -1,20 +1,27 @@
-## Refactoring Obese Models
+## Refactoring Obese Rails Models
 ####Joey Lorich
 
 
 ## Fat model - Skinny Controller
   - Great idea in a general sense
   - Keep most logic out of the contorller
-  - However, models quickly become unmaintainably 'fat'
+  - Commonly misundertood
+  
+## What really is the 'model'
+  - Model layer, not model file
+  - Not just ActiveRecord::Base subclasses
+  - Data representation as well as business logic
+  
+## So what's the problem?
+  - Rails often encourages you to just put everyting in the ActiveRecord::Base model files
+  - Eventually your model fiels are unmaintainably 'fat'
 
-
-## Obese Models
+## Obese Model Files
  - Hundreds or even thousands of lines of code
  - Hard to navigate
  - Too large to effectively organize
  - Massive test files
  - Often not very independent (easy to just use lots of shared ivars)
-
 
 ## Classes should be SOLID, not fat
   - Single responsibility principle
@@ -24,15 +31,15 @@
   - Liskov substitution principle
     - Objects in a program should be replaceable with instances of their subtypes without altering the correctness of that program (See design by contract)
   - Interface segregation principle
-    - No client should be forced to depend on methods it does not use
+    - No client should be forced to implement methods it does not need
   - Dependency inversion principle
-    - One should “Depend upon Abstractions. Do not depend upon concretion (See Dependency Injection)
+    - One should depend upon abstractions, notconcretion (See Dependency Injection)
 
 
 ## Obese models are not SOLID
-  - Breaking the single responsibility principle all over
+  - Breaking the single responsibility principle
   - Often highly dependent on other code
-  - Too many specific features to be extended
+  - Too many specific features to be reasonably extended
   - Too many specific features to be substituted
 
 
@@ -47,19 +54,17 @@
 
 
 ## Concerns
- - Essentially a mixin, but with a little rails magic to make sure you can't do a few things
- - A simple way to pull out shared code into an additional class
+ - Essentially a mixin, but with a few helpers to simplify things
+ - A simple way to pull out shared code into a module
 
 
-## DHH Example
+## Example
     module Taggable
       extend ActiveSupport::Concern
 
       included do
         has_many :taggings, as: :taggable
         has_many :tags, through: :taggings
-
-        class_attribute :tag_limit
       end
 
       def tags_string
@@ -71,50 +76,6 @@
 
         tag_names.each do |tag_name|
           tags.build(name: tag_name)
-        end
-      end
-
-      module ClassMethods
-
-        def tag_limit(value)
-          self.tag_limit_value = value
-        end
-
-      end
-    end
-
-
-## Uwithus Example
-    module Personable
-      extend ActiveSupport::Concern
-
-      def full_name
-        "#{first_name.to_s.capitalize} #{last_name.present? ? last_name.to_s.capitalize : family.name.to_s.capitalize}"
-      end
-
-      def member_of? (family_or_organization)
-        case family_or_organization
-          when Family
-            self.family == family_or_organization
-            
-          when Organization
-            if self.class == OrganizationUser
-              family_or_organization.organization_users.include?(self)
-            else
-              false
-            end
-          end
-      end
-
-      def transfer_to_family(family)
-        raise "No destination family provided" if family.blank?
-        
-        previous_family = self.family
-
-        self.family = family
-
-        if previous_family && previous_family.adults.blank? && previous_family.children.blank?
-          previous_family.destroy
         end
       end
     end
@@ -134,10 +95,9 @@
 ## Service Objects
  - A seperate basic ruby class to help handle some kind of interaction
  - Should be relatively isolated and reusable
- - Can provide a good alternative to after_xxxx hooks
 
 
-## When to user service objects
+## When to use service objects
  - Complex actions
  - Cross-model actions
  - Interfacing with a third party service
