@@ -228,7 +228,6 @@
 ## Problems
  - Often simply moving code instead of logically abstracting out
  - Can make relationships / method implementations non-obvious
- - Easily abusable
 
 
 ## How to use concerns
